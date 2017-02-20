@@ -1,0 +1,93 @@
+---
+title: "Machine Learning - Prediction Assignment"
+author: "Rick"
+date: "February 20, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE )
+```
+
+## Instructions
+One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.
+
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+## Data Processing
+
+```{r cache=TRUE}
+download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "pml-training.csv", mode = "wb")
+
+download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "pml-testing.csv", mode = "wb")
+
+pml.training <- read.table("pml-training.csv", header = TRUE, sep = ",")
+pml.testing <- read.table("pml-testing.csv", header = TRUE, sep = ",")
+```
+
+Let's use VIM::agg and mice::md.pattern to explore missing values.
+
+```{r}
+library(VIM)
+library(mice)
+aggr(pml.training, prop = FALSE, numbers = TRUE)
+mdp <- md.pattern(pml.training)
+mdp[, c(1, 158:161)]
+```
+
+In the pml-training dataset, there are 67 variables contain lots of missing values. After closely examining categorical columns, many of them also contain lot of empty strings.
+
+We will exclude all columns that contain missing values or empty strings. We will focus on measures from accelerometers on the belt, forearm, arm, and dumbell.
+
+```{r}
+na.cols <- sapply(pml.training, function (x) any(is.na(x)))
+emptystring.cols <- sapply(pml.training, function (x) any(x == ""))
+vartokeep <- !na.cols & !emptystring.cols & grepl("arm|belt|dumbbell|classe", names(pml.training))
+trainingset <- pml.training[ ,vartokeep]
+```
+
+## Building Model
+
+Let's take a look at the "classe" variable.
+```{r}
+table(trainingset$classe)
+```
+
+This is a typical classification question. In R, there are several different models for classification. Random forests is pretty popular and accurate compared with other classification methods.
+
+In this analysis, we will use Random forests to create our model. 
+
+```{r cache=TRUE}
+library(caret)
+library(randomForest)
+library(ggplot2)
+
+set.seed(3355422)
+intrain <- createDataPartition(trainingset$classe, p=0.7, list = FALSE )
+training <- trainingset[intrain,]
+testing <- trainingset[-intrain,]
+
+fit.rf <- randomForest(classe ~ ., data=training, importance=TRUE
+                       , na.action=na.omit)
+fit.rf
+```
+
+The OOB, out-of-bag, error estimate is obtained by classifying the cases that aren't selected when building a tree. The OOB in this analysis is only 0.49% which is pretty low.
+
+Let's take a look at the measure of variable importance.
+
+```{r fig.height=8, fig.width=8}
+library(caret)
+library(randomForest)
+library(ggplot2)
+varImpPlot(fit.rf)
+```
+
+## Validation
+Next, we will create a confusion matrix using testing data.
+
+```{r}
+confusionMatrix(predict(fit.rf, testing), testing$classe)
+```
+
+The accuracy rate is 99.4%. The expected out of sample error is about 0.6%.
